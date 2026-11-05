@@ -29,6 +29,22 @@ Idle sessions are stopped after a while and resumed with the same session ID whe
 - GitHub Copilot CLI (`copilot`).
 - Dev Tunnels CLI (`devtunnel`), signed in with `devtunnel user login -g -d`. Use the same account on every machine; machines only see tunnels owned by that account.
 
+## Setup
+
+```sh
+npm install
+npm link            # puts agent-net on PATH
+agent-net install   # adds the extension to Copilot and starts the daemon at login
+```
+
+| Command | Does |
+|---|---|
+| `agent-net start` / `stop` | Starts or stops the daemon in the background. |
+| `agent-net run` | Runs the daemon in this terminal. |
+| `agent-net ls` | Lists agents on every machine. |
+| `agent-net attach <id>` | Watches and types into an agent on this machine. Ctrl+] detaches. |
+| `agent-net install` / `uninstall` | Adds or removes the Copilot extension and the login item: a systemd user service on Linux, a LaunchAgent on macOS, a logon task on Windows. |
+
 ## Configuration
 
 `~/.agent-net/config.json` (set `AGENT_NET_HOME` to use another folder):
