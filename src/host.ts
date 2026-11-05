@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
-import pty from "@lydell/node-pty";
+import pty from "node-pty";
 import { hostsDir, socketPath, statePath } from "./ipc.ts";
 import type { HostRequest } from "./ipc.ts";
 
