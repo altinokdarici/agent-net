@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: write
 jobs:
   check:
     strategy:
@@ -12,8 +14,50 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+
+  build:
+    if: github.event_name == 'push'
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    env:
+      AGENT_NET_VERSION: 0.2.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 24
-      - run: npm ci
-      - run: npm run check
+          targets: ${{ matrix.target }}
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --target ${{ matrix.target }}
+      - shell: bash
+        run: |
+          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
+          mkdir dist && cp "target/${{ matrix.target }}/release/agent-net$ext" "dist/agent-net-${{ matrix.target }}$ext"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v0.2.${{ github.run_number }}" dist/* --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "v0.2.${{ github.run_number }}" --notes "Built from ${{ github.sha }}."

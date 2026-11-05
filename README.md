@@ -2,10 +2,11 @@
 
 A network of GitHub Copilot CLI agents across your own machines. Any agent can start an agent on another machine, send it messages and get replies through one `agent()` tool. Machines connect over private Microsoft Dev Tunnels.
 
-> Status: early development. Pieces land one pull request at a time.
+> Status: early development.
 
 ## How it works
 
+- **One binary:** `agent-net` is a single executable for Windows, macOS and Linux. It updates itself from GitHub releases.
 - **Daemon:** one per machine. It hosts the machine's private Dev Tunnel, finds the other machines and routes messages by session ID.
 - **Session host:** each agent is a normal interactive `copilot` session running hidden in a pseudo-terminal. You can attach to it to watch or type.
 - **Extension:** loaded into every session. It delivers incoming messages as turns and provides the `agent()` tool.
@@ -22,20 +23,24 @@ Idle sessions are stopped after a while and resumed with the same session ID whe
 | `send` | `id`, `text` | Sends a message. Replies arrive later as a new message; there is no polling. |
 | `status` | `id` | Shows whether an agent is running or sleeping. |
 | `stop` | `id` | Ends an agent for good. |
+| `upload` | `path`, `machine`, `to` | Copies a local file to another machine. |
+| `download` | `machine`, `path`, `to` | Copies a file from another machine. |
 
 ## Requirements
 
-- Node.js 24 or later.
 - GitHub Copilot CLI (`copilot`).
 - Dev Tunnels CLI (`devtunnel`), signed in with `devtunnel user login -g -d`. Use the same account on every machine; machines only see tunnels owned by that account.
+- While this repository is private, updates need GitHub access: `gh auth login` with an account that can read it, or `GITHUB_TOKEN`.
 
 ## Setup
 
+Download the binary for your platform from the [latest release](https://github.com/altinokdarici/agent-net/releases/latest), then run:
+
 ```sh
-npm install
-npm link            # puts agent-net on PATH
-agent-net install   # adds the extension to Copilot and starts the daemon at login
+./agent-net-<platform> install
 ```
+
+`install` copies the binary to `~/.agent-net/bin/agent-net`, adds the extension to Copilot and starts the daemon at login.
 
 | Command | Does |
 |---|---|
@@ -43,7 +48,13 @@ agent-net install   # adds the extension to Copilot and starts the daemon at log
 | `agent-net run` | Runs the daemon in this terminal. |
 | `agent-net ls` | Lists agents on every machine. |
 | `agent-net attach <id>` | Watches and types into an agent on this machine. Ctrl+] detaches. |
-| `agent-net install` / `uninstall` | Adds or removes the Copilot extension and the login item: a systemd user service on Linux, a LaunchAgent on macOS, a logon task on Windows. |
+| `agent-net install` / `uninstall` | Adds or removes the binary, the Copilot extension and the login item: a systemd user service on Linux, a LaunchAgent on macOS, a logon task on Windows. |
+| `agent-net update` | Installs the latest release now. |
+| `agent-net version` | Prints the version. |
+
+## Updates
+
+Every push to `main` publishes a release. The daemon checks for a newer one at start and every hour, replaces its own binary, refreshes the Copilot extension and restarts. Running agents are not interrupted. Set `"autoUpdate": false` to turn this off. Local development builds never update themselves.
 
 ## Configuration
 
@@ -62,12 +73,13 @@ agent-net install   # adds the extension to Copilot and starts the daemon at log
 | `allowedPaths` | `[]` | Folders remote agents may start sessions in and transfer files to or from. |
 | `idleMinutes` | `30` | Minutes a session may sit idle before it is stopped. |
 | `port` | `4590` | Local port of the daemon's HTTP API. |
+| `autoUpdate` | `true` | Installs new releases automatically. |
 
 ## Development
 
 ```sh
-npm install
-npm run check
+cargo test
+cargo run -- run      # the daemon in this terminal
 ```
 
-TypeScript runs directly on Node 24; there is no build step. Run the daemon with `node src/daemon.ts`. Copilot sessions started in this repository load the extension from `.github/extensions/agent-net/`.
+Copilot sessions started in this repository load the extension from `.github/extensions/agent-net/`.
