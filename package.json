@@ -1,0 +1,19 @@
+{
+  "name": "agent-net",
+  "version": "0.1.0",
+  "description": "A network of Copilot CLI agents across your machines, connected over Dev Tunnels.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
