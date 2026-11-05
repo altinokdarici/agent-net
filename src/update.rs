@@ -103,7 +103,7 @@ pub async fn update(force: bool) -> Result<Option<String>> {
         bail!("Could not download {name}: GitHub returned {}.", response.status());
     }
     let bytes = response.bytes().await?;
-    let exe = std::env::current_exe()?;
+    let exe = crate::current_exe()?;
     let temp = exe.with_extension("download");
     std::fs::write(&temp, &bytes)?;
     #[cfg(unix)]
@@ -120,7 +120,7 @@ pub async fn update(force: bool) -> Result<Option<String>> {
 /// Starts the updated daemon in place of this one. On Unix the process image is replaced,
 /// keeping the pid that systemd or launchd watches. Windows starts a hidden successor.
 pub fn restart_daemon() -> Result<()> {
-    let exe = std::env::current_exe()?;
+    let exe = crate::current_exe()?;
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

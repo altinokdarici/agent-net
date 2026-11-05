@@ -31,3 +31,13 @@ pub fn log(message: &str) {
         let _ = writeln!(file, "{seconds} {message}");
     }
 }
+
+/// This executable's path. On Linux, after the binary is replaced, the kernel reports the old
+/// path with a " (deleted)" suffix; the new binary lives at the path without it.
+pub fn current_exe() -> std::io::Result<std::path::PathBuf> {
+    let exe = std::env::current_exe()?;
+    match exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
+        Some(path) => Ok(std::path::PathBuf::from(path)),
+        None => Ok(exe),
+    }
+}

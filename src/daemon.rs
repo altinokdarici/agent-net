@@ -247,7 +247,7 @@ pub fn state_path(dir: &Path) -> PathBuf {
 pub async fn run(dir: PathBuf) -> anyhow::Result<()> {
     let config = load_config(&dir)?;
     let machine = gethostname::gethostname().to_string_lossy().to_string();
-    let exe = std::env::current_exe()?;
+    let exe = crate::current_exe()?;
     std::fs::create_dir_all(&dir)?;
     let listener = bind(config.port).await?;
     crate::install::refresh_extension();
