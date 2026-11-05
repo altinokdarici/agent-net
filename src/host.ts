@@ -1,10 +1,21 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import net from "node:net";
 import { fileURLToPath } from "node:url";
 import pty from "node-pty";
 import { hostsDir, socketPath, statePath } from "./ipc.ts";
 import type { HostRequest } from "./ipc.ts";
+
+/** node-pty 1.1.0 ships macOS's spawn-helper without execute permission, which breaks every spawn. */
+function fixSpawnHelper(): void {
+  if (process.platform !== "darwin") return;
+  const root = dirname(dirname(createRequire(import.meta.url).resolve("node-pty")));
+  for (const helper of [join(root, "prebuilds", `darwin-${process.arch}`, "spawn-helper"), join(root, "build", "Release", "spawn-helper")]) {
+    if (existsSync(helper)) chmodSync(helper, 0o755);
+  }
+}
 
 export type HostOptions = {
   id: string;
@@ -38,6 +49,7 @@ export function killTree(pid: number): void {
  */
 export function runHost(options: HostOptions): Promise<number> {
   const limit = options.scrollback ?? 1024 * 1024;
+  fixSpawnHelper();
   const child = pty.spawn(options.command, options.args, {
     name: "xterm-256color",
     cols: options.cols ?? 120,
