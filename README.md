@@ -12,6 +12,17 @@ A network of GitHub Copilot CLI agents across your own machines. Any agent can s
 
 Idle sessions are stopped after a while and resumed with the same session ID when a new message arrives.
 
+## The agent tool
+
+| Action | Arguments | Does |
+|---|---|---|
+| `machines` | | Lists machines in the network. |
+| `list` | | Lists agents on every machine. |
+| `spawn` | `cwd`, `prompt`, optional `machine` and `name` | Starts an agent. It messages the caller back when done. |
+| `send` | `id`, `text` | Sends a message. Replies arrive later as a new message; there is no polling. |
+| `status` | `id` | Shows whether an agent is running or sleeping. |
+| `stop` | `id` | Ends an agent for good. |
+
 ## Requirements
 
 - Node.js 24 or later.
@@ -43,4 +54,4 @@ npm install
 npm run check
 ```
 
-TypeScript runs directly on Node 24; there is no build step.
+TypeScript runs directly on Node 24; there is no build step. Run the daemon with `node src/daemon.ts`. Copilot sessions started in this repository load the extension from `.github/extensions/agent-net/`.

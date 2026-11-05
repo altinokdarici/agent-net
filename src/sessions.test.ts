@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { defaults } from "./config.ts";
 import type { HostOptions } from "./host.ts";
-import { isAllowed, Sessions } from "./sessions.ts";
+import { formatMessage, isAllowed, Sessions } from "./sessions.ts";
 
 function fake(start = 0) {
   const state = {
@@ -97,4 +97,14 @@ test("stop ends and forgets a session", async () => {
   assert.equal(env.state.running.size, 0);
   assert.deepEqual(await env.sessions.list(), []);
   await assert.rejects(env.sessions.send(id, "x"), { status: 404 });
+});
+
+test("messages say who sent them, and reach sessions this daemon did not start", async () => {
+  await using env = await setup();
+  assert.match(formatMessage("hi", "abc"), /from agent abc[\s\S]*id "abc"/);
+  assert.equal(formatMessage("hi"), "hi");
+  await assert.rejects(env.sessions.send("outside", "hi", "abc"), { status: 404 });
+  env.state.extensionReady = true;
+  assert.equal(await env.sessions.send("outside", "hi", "abc"), "delivered");
+  assert.deepEqual(env.state.delivered, [formatMessage("hi", "abc")]);
 });

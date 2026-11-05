@@ -24,7 +24,7 @@ export type SessionDeps = {
   isRunning: (dir: string, id: string) => Promise<boolean>;
   trust: (folder: string) => Promise<unknown>;
   /** Hands a message to the agent-net extension inside a running session. */
-  deliver: (dir: string, id: string, text: string) => Promise<boolean>;
+  deliver: (dir: string, id: string, prompt: string) => Promise<boolean>;
   now: () => number;
 };
 
@@ -51,7 +51,22 @@ export function portFile(dir: string, id: string): string {
   return join(dir, "ports", `${id}.json`);
 }
 
-async function deliverToExtension(dir: string, id: string, text: string): Promise<boolean> {
+/** The prompt a session receives for a message, telling it who sent it and how to reply. */
+export function formatMessage(text: string, from?: string): string {
+  if (!from) return text;
+  return `Message from agent ${from}:\n\n${text}\n\nTo reply, call the agent tool with action "send" and id "${from}".`;
+}
+
+async function hasPortFile(dir: string, id: string): Promise<boolean> {
+  try {
+    await readFile(portFile(dir, id));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function deliverToExtension(dir: string, id: string, prompt: string): Promise<boolean> {
   let port: number;
   try {
     port = JSON.parse(await readFile(portFile(dir, id), "utf8")).port;
@@ -62,7 +77,7 @@ async function deliverToExtension(dir: string, id: string, text: string): Promis
     const response = await fetch(`http://127.0.0.1:${port}/message`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ prompt }),
     });
     return response.ok;
   } catch {
@@ -99,6 +114,11 @@ export class Sessions {
     } catch {
       return undefined;
     }
+  }
+
+  /** True for a session this daemon started, or any local session whose extension is listening. */
+  async has(id: string): Promise<boolean> {
+    return (await this.get(id)) !== undefined || await hasPortFile(this.dir, id);
   }
 
   async list(): Promise<SessionInfo[]> {
@@ -150,19 +170,24 @@ export class Sessions {
   /**
    * Sends a message. A sleeping session wakes with the message as its prompt. A running
    * session gets it through its extension, or later if the extension is not ready yet.
+   * Sessions this daemon did not start can only receive messages while their extension listens.
    */
-  async send(id: string, text: string): Promise<"delivered" | "queued" | "woke"> {
-    const record = await this.get(id);
-    if (!record) throw new HttpError(404, `No session ${id}.`);
+  async send(id: string, text: string, from?: string): Promise<"delivered" | "queued" | "woke"> {
     if (!text) throw new HttpError(400, "text is required.");
+    const prompt = formatMessage(text, from);
+    const record = await this.get(id);
+    if (!record) {
+      if (await this.deps.deliver(this.dir, id, prompt)) return "delivered";
+      throw new HttpError(404, `No session ${id}.`);
+    }
     this.lastActive.set(id, this.deps.now());
     if (!(await this.deps.isRunning(this.dir, id))) {
-      await this.launch(record, text);
+      await this.launch(record, prompt);
       return "woke";
     }
     const queue = this.queues.get(id) ?? [];
-    if (queue.length === 0 && await this.deps.deliver(this.dir, id, text)) return "delivered";
-    queue.push(text);
+    if (queue.length === 0 && await this.deps.deliver(this.dir, id, prompt)) return "delivered";
+    queue.push(prompt);
     this.queues.set(id, queue);
     return "queued";
   }
