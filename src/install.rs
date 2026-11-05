@@ -129,8 +129,25 @@ fn uid() -> u32 {
     0
 }
 
+/// Drops PATH entries that will not outlive this shell: missing folders, temp folders
+/// and per-shell version manager folders.
+pub fn stable_path(path: &str, temp: &Path) -> String {
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let temp = temp.to_string_lossy().to_lowercase();
+    let mut kept: Vec<&str> = Vec::new();
+    for entry in path.split(separator) {
+        let lower = entry.to_lowercase();
+        let temporary = lower.starts_with(temp.trim_end_matches(['/', '\\'])) || lower.contains("/var/folders/") || lower.contains("fnm_multishells") || lower.contains("/tmp/");
+        if !entry.is_empty() && !temporary && Path::new(entry).is_dir() && !kept.contains(&entry) {
+            kept.push(entry);
+        }
+    }
+    kept.join(&separator.to_string())
+}
+
 fn plan(exe: &Path) -> Result<Autostart> {
     let path = std::env::var("PATH").or_else(|_| std::env::var("Path")).unwrap_or_default();
+    let path = stable_path(&path, &std::env::temp_dir());
     autostart(exe, &path, &home_dir(), std::env::consts::OS, uid())
 }
 
@@ -216,6 +233,13 @@ pub fn uninstall() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn stable_path_drops_temporary_entries() {
+        let path = "/usr/bin:/tmp/shim:/nonexistent-dir:/usr/bin:/bin:/x/fnm_multishells/1/bin";
+        assert_eq!(stable_path(path, Path::new("/tmp")), "/usr/bin:/bin");
+    }
 
     #[test]
     fn linux_unit_keeps_sessions_alive() {

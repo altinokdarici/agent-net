@@ -19,20 +19,44 @@ pub fn asset_name() -> String {
     format!("agent-net-{}{}", env!("TARGET"), if cfg!(windows) { ".exe" } else { "" })
 }
 
-/// A GitHub token, for when the repository is private: GITHUB_TOKEN, GH_TOKEN or `gh auth token`.
-fn github_token() -> Option<String> {
+fn gh(args: &[&str]) -> Option<String> {
+    let mut command = std::process::Command::new("gh");
+    crate::process::quiet(command.args(args));
+    let out = command.output().ok()?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    out.status.success().then_some(text)
+}
+
+/// Accounts listed by `gh auth status`.
+pub fn gh_accounts(status: &str) -> Vec<String> {
+    status.lines().filter_map(|l| l.split(" account ").nth(1)).filter_map(|r| r.split_whitespace().next()).map(String::from).collect()
+}
+
+/// GitHub tokens to try, for when the repository is private: GITHUB_TOKEN, GH_TOKEN,
+/// the active gh account, then every other gh account.
+fn github_tokens() -> Vec<Option<String>> {
+    let mut tokens: Vec<Option<String>> = Vec::new();
+    let mut add = |t: String| {
+        let t = t.trim().to_string();
+        if !t.is_empty() && !tokens.contains(&Some(t.clone())) {
+            tokens.push(Some(t));
+        }
+    };
     for key in ["GITHUB_TOKEN", "GH_TOKEN"] {
         if let Ok(t) = std::env::var(key) {
-            if !t.is_empty() {
-                return Some(t);
-            }
+            add(t);
         }
     }
-    let mut command = std::process::Command::new("gh");
-    crate::process::quiet(command.args(["auth", "token"]));
-    let out = command.output().ok()?;
-    let token = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (out.status.success() && !token.is_empty()).then_some(token)
+    if let Some(t) = gh(&["auth", "token"]) {
+        add(t);
+    }
+    for account in gh_accounts(&gh(&["auth", "status"]).unwrap_or_default()) {
+        if let Some(t) = gh(&["auth", "token", "--user", &account]) {
+            add(t);
+        }
+    }
+    tokens.push(None);
+    tokens
 }
 
 fn client() -> Result<reqwest::Client> {
@@ -52,12 +76,20 @@ pub async fn update(force: bool) -> Result<Option<String>> {
     if !crate::RELEASED && !force {
         return Ok(None);
     }
-    let token = github_token();
     let http = client()?;
-    let response = authorize(http.get(format!("https://api.github.com/repos/{REPO}/releases/latest")), &token).header("accept", "application/vnd.github+json").send().await?;
-    if !response.status().is_success() {
-        bail!("Could not read the latest release: GitHub returned {}. A private repository needs `gh auth login` or GITHUB_TOKEN.", response.status());
+    let mut found = None;
+    let mut last = None;
+    for token in github_tokens() {
+        let response = authorize(http.get(format!("https://api.github.com/repos/{REPO}/releases/latest")), &token).header("accept", "application/vnd.github+json").send().await?;
+        if response.status().is_success() {
+            found = Some((token, response));
+            break;
+        }
+        last = Some(response.status());
     }
+    let Some((token, response)) = found else {
+        bail!("Could not read the latest release: GitHub returned {}. A private repository needs a gh account or GITHUB_TOKEN with access.", last.map(|s| s.to_string()).unwrap_or_default());
+    };
     let release: Value = response.json().await?;
     let tag = release["tag_name"].as_str().context("The latest release has no tag")?.to_string();
     if crate::RELEASED && !is_newer(&tag, crate::VERSION) {
@@ -106,6 +138,12 @@ pub fn restart_daemon() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_gh_accounts() {
+        let status = "github.com\n  ✓ Logged in to github.com account alice (keyring)\n  - Active account: true\n  ✓ Logged in to github.com account bob (keyring)\n";
+        assert_eq!(gh_accounts(status), vec!["alice", "bob"]);
+    }
 
     #[test]
     fn compares_versions() {
