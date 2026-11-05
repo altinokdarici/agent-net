@@ -36,3 +36,18 @@ test("reports missing arguments and daemon errors", async () => {
   await assert.rejects(runAgent({ action: "send", id: "x" }, "me", recorder().call), /text is required/);
   await assert.rejects(runAgent({ action: "status", id: "x" }, "me", recorder(404, { error: "No session x." }).call), /No session x/);
 });
+
+test("upload sends the local file, download saves the remote one", async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "agent-net-agent-"));
+  await writeFile(join(dir, "a.txt"), "hello");
+  const { calls, call } = recorder(200, { machine: "mac", path: "/r/b.txt", size: 2, content: Buffer.from("hi").toString("base64") });
+  await runAgent({ action: "upload", machine: "mac", path: join(dir, "a.txt"), to: "/r/a.txt" }, "me", call);
+  assert.deepEqual(calls[0], ["POST", "/files/write", { machine: "mac", path: "/r/a.txt", content: Buffer.from("hello").toString("base64") }]);
+  const result = JSON.parse(await runAgent({ action: "download", machine: "mac", path: "/r/b.txt", to: join(dir, "sub", "b.txt") }, "me", call));
+  assert.equal(await readFile(join(dir, "sub", "b.txt"), "utf8"), "hi");
+  assert.equal(result.from, "mac:/r/b.txt");
+  await rm(dir, { recursive: true, force: true });
+});

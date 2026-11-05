@@ -1,12 +1,14 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import http from "node:http";
 import { hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dataDir, loadConfig } from "./config.ts";
 import { findCopilot } from "./copilot.ts";
 import { DevtunnelCli } from "./devtunnel.ts";
-import { HttpError, Sessions } from "./sessions.ts";
+import { HttpError, isAllowed, Sessions } from "./sessions.ts";
+import type { Config } from "./config.ts";
 import { MachineTunnel } from "./tunnel.ts";
 import type { Peer } from "./tunnel.ts";
 
@@ -20,9 +22,18 @@ export type Network = {
 
 type Reply = { status: number; body: unknown };
 
+/** Largest file the files API moves in one request. */
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
+
 async function readBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(chunk as Buffer);
+  let size = 0;
+  for await (const chunk of request) {
+    size += (chunk as Buffer).length;
+    // base64 makes files about a third larger.
+    if (size > MAX_FILE_BYTES * 1.5) throw new HttpError(413, "Request is too large.");
+    chunks.push(chunk as Buffer);
+  }
   const text = Buffer.concat(chunks).toString("utf8");
   if (!text) return {};
   const value = JSON.parse(text);
@@ -43,11 +54,13 @@ export class Daemon {
   private sessions: Sessions;
   private network?: Network;
   private machine: string;
+  private allowedPaths: () => string[];
 
-  constructor(options: { sessions: Sessions; machine: string; network?: Network }) {
+  constructor(options: { sessions: Sessions; machine: string; network?: Network; config?: Pick<Config, "allowedPaths"> }) {
     this.sessions = options.sessions;
     this.machine = options.machine;
     this.network = options.network;
+    this.allowedPaths = () => options.config?.allowedPaths ?? [];
   }
 
   handler = async (request: http.IncomingMessage, response: http.ServerResponse): Promise<void> => {
@@ -70,6 +83,7 @@ export class Daemon {
     const body = method === "POST" ? await readBody(request) : {};
 
     if (parts[0] === "machines" && parts.length === 1 && method === "GET") return { status: 200, body: await this.machines() };
+    if (parts[0] === "files" && parts.length === 2 && method === "POST") return this.files(parts[1], body, remote);
     if (parts[0] !== "sessions") throw new HttpError(404, "Not found.");
 
     if (parts.length === 1 && method === "GET") return { status: 200, body: await this.listAll(remote) };
@@ -118,13 +132,47 @@ export class Daemon {
     return [...local, ...lists.flat()];
   }
 
-  private async spawn(body: Record<string, unknown>, remote: boolean): Promise<Reply> {
-    const machine = text(body.machine);
-    if (machine && !remote) {
-      const peer = (await this.peers()).find(p => p.name.toLowerCase() === machine.toLowerCase() || p.tunnelId === machine);
-      if (!peer && machine.toLowerCase() !== this.machine.toLowerCase()) throw new HttpError(404, `No machine ${machine}.`);
-      if (peer && !peer.self) return this.request(peer, "POST", "/sessions", body);
+  /** The peer a request names in `machine`, or undefined when it is for this machine. */
+  private async target(machine: string | undefined, remote: boolean): Promise<Peer | undefined> {
+    if (!machine || remote) return undefined;
+    const peer = (await this.peers()).find(p => p.name.toLowerCase() === machine.toLowerCase() || p.tunnelId === machine);
+    if (!peer && machine.toLowerCase() !== this.machine.toLowerCase()) throw new HttpError(404, `No machine ${machine}.`);
+    return peer && !peer.self ? peer : undefined;
+  }
+
+  /**
+   * Reads or writes a file on a machine. Content travels as base64. Requests from other
+   * machines may only touch files inside allowedPaths.
+   */
+  private async files(action: string, body: Record<string, unknown>, remote: boolean): Promise<Reply> {
+    if (action !== "read" && action !== "write") throw new HttpError(404, "Not found.");
+    const peer = await this.target(text(body.machine), remote);
+    if (peer) return this.request(peer, "POST", `/files/${action}`, body);
+    const input = text(body.path);
+    if (!input) throw new HttpError(400, "path is required.");
+    const path = resolve(input);
+    if (remote && !isAllowed(path, this.allowedPaths())) throw new HttpError(403, `Path is not in allowedPaths: ${path}`);
+    if (action === "read") {
+      let data: Buffer;
+      try {
+        data = await readFile(path);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        throw new HttpError(code === "ENOENT" ? 404 : 400, `Cannot read ${path}: ${code}`);
+      }
+      if (data.length > MAX_FILE_BYTES) throw new HttpError(413, `${path} is larger than ${MAX_FILE_BYTES} bytes.`);
+      return { status: 200, body: { machine: this.machine, path, size: data.length, content: data.toString("base64") } };
     }
+    if (typeof body.content !== "string") throw new HttpError(400, "content is required.");
+    const data = Buffer.from(body.content, "base64");
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, data);
+    return { status: 200, body: { machine: this.machine, path, size: data.length } };
+  }
+
+  private async spawn(body: Record<string, unknown>, remote: boolean): Promise<Reply> {
+    const peer = await this.target(text(body.machine), remote);
+    if (peer) return this.request(peer, "POST", "/sessions", body);
     const cwd = text(body.cwd);
     if (!cwd) throw new HttpError(400, "cwd is required.");
     const session = await this.sessions.spawn({ cwd, prompt: text(body.prompt) ?? "", name: text(body.name), from: text(body.from), remote });
@@ -165,7 +213,7 @@ export async function runDaemon(dir = dataDir()): Promise<{ close(): Promise<voi
   const sessions = new Sessions({ dir, config, copilot: findCopilot() });
   const tunnel = new MachineTunnel({ cli: new DevtunnelCli(), name: machine, port: config.port });
   await tunnel.start();
-  const daemon = new Daemon({ sessions, machine, network: tunnel });
+  const daemon = new Daemon({ sessions, machine, network: tunnel, config });
   const server = http.createServer(daemon.handler);
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
