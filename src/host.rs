@@ -156,9 +156,15 @@ pub async fn run_host(options: HostOptions) -> Result<i32> {
     let reading = shared.clone();
     std::thread::spawn(move || {
         let mut chunk = [0u8; 16 * 1024];
+        // ConPTY asks for the cursor position at startup and waits for an answer.
+        let mut answered = !cfg!(windows);
         while let Ok(n) = reader.read(&mut chunk) {
             if n == 0 {
                 break;
+            }
+            if !answered && chunk[..n].windows(4).any(|w| w == b"\x1b[6n") {
+                answered = true;
+                reading.write(b"\x1b[1;1R");
             }
             let mut buffer = reading.buffer.lock().unwrap();
             buffer.extend_from_slice(&chunk[..n]);
