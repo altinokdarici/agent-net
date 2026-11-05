@@ -74,7 +74,7 @@ export class Daemon {
     if (parts.length === 1 && method === "POST") return this.spawn(body, remote);
 
     const id = parts[1];
-    if (!(await this.sessions.get(id))) {
+    if (!(await this.sessions.has(id))) {
       if (remote) throw new HttpError(404, `No session ${id}.`);
       return this.forward(id, method, url.pathname, body);
     }
@@ -84,7 +84,7 @@ export class Daemon {
       return { status: 200, body: { stopped: id } };
     }
     if (parts.length === 3 && parts[2] === "messages" && method === "POST") {
-      const result = await this.sessions.send(id, text(body.text) ?? "");
+      const result = await this.sessions.send(id, text(body.text) ?? "", text(body.from));
       return { status: 200, body: { id, result } };
     }
     throw new HttpError(404, "Not found.");
@@ -107,7 +107,8 @@ export class Daemon {
     const lists = await Promise.all(others.map(async peer => {
       try {
         const response = await this.network!.fetch(peer, "/sessions", { headers: { [HOP_HEADER]: "1" } });
-        return response.ok ? (await response.json() as unknown[]) : [];
+        const body: unknown = response.ok ? await response.json() : [];
+        return Array.isArray(body) ? body : [];
       } catch {
         return [];
       }
