@@ -4,6 +4,9 @@
   "description": "A network of Copilot CLI agents across your machines, connected over Dev Tunnels.",
   "type": "module",
   "private": true,
+  "bin": {
+    "agent-net": "src/cli.ts"
+  },
   "engines": {
     "node": ">=24"
   },

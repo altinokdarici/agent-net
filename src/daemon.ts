@@ -1,5 +1,7 @@
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { hostname } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dataDir, loadConfig } from "./config.ts";
 import { findCopilot } from "./copilot.ts";
@@ -149,7 +151,14 @@ export class Daemon {
   }
 }
 
-/** Starts the daemon on this machine: tunnel, session manager and HTTP API. */
+export function daemonStatePath(dir: string): string {
+  return join(dir, "daemon.json");
+}
+
+/**
+ * Starts the daemon on this machine: tunnel, session manager and HTTP API. It records its
+ * pid in daemon.json and shuts down cleanly on SIGINT or SIGTERM.
+ */
 export async function runDaemon(dir = dataDir()): Promise<{ close(): Promise<void> }> {
   const config = await loadConfig(dir);
   const machine = hostname();
@@ -168,13 +177,18 @@ export async function runDaemon(dir = dataDir()): Promise<{ close(): Promise<voi
     ticking = true;
     sessions.tick().catch(() => {}).finally(() => { ticking = false; });
   }, 2_000);
-  return {
-    async close() {
-      clearInterval(timer);
-      await new Promise(resolve => server.close(resolve));
-      await tunnel.stop();
-    },
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(daemonStatePath(dir), JSON.stringify({ pid: process.pid, port: config.port }));
+  const close = async () => {
+    clearInterval(timer);
+    try {
+      if (JSON.parse(readFileSync(daemonStatePath(dir), "utf8")).pid === process.pid) rmSync(daemonStatePath(dir), { force: true });
+    } catch {}
+    await new Promise(resolve => server.close(resolve));
+    await tunnel.stop();
   };
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => void close().finally(() => process.exit(0)));
+  return { close };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
