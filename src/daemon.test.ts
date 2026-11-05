@@ -33,7 +33,7 @@ async function network() {
       },
     });
     const net: Network = { peers: async () => peersOf(name), fetch: (peer, path, init) => fetch(new URL(path, peer.url), init) };
-    const daemon = new Daemon({ sessions, machine: name, network: net });
+    const daemon = new Daemon({ sessions, machine: name, network: net, config: { allowedPaths: [dir] } });
     const server = http.createServer(daemon.handler);
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     machines.push({ name, dir, server, daemon, url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` });
@@ -81,4 +81,20 @@ test("lists machines and rejects bad requests", async () => {
   const outside = await call(home.url, "POST", "/sessions", { machine: "mac", cwd: home.dir, prompt: "x" });
   assert.equal(outside.status, 403);
   assert.equal((await call(mac.url, "GET", "/sessions/unknown", undefined, { [HOP_HEADER]: "1" })).status, 404);
+});
+
+test("moves files between machines, only inside allowedPaths remotely", async () => {
+  await using net = await network();
+  const [home, mac] = net.machines;
+  const { readFile } = await import("node:fs/promises");
+  const content = Buffer.from("data").toString("base64");
+  const wrote = await call(home.url, "POST", "/files/write", { machine: "mac", path: join(mac.dir, "in", "x.txt"), content });
+  assert.equal(wrote.status, 200);
+  assert.equal(await readFile(join(mac.dir, "in", "x.txt"), "utf8"), "data");
+  const read = await call(home.url, "POST", "/files/read", { machine: "mac", path: join(mac.dir, "in", "x.txt") });
+  assert.equal(Buffer.from(read.body.content, "base64").toString(), "data");
+  assert.equal((await call(home.url, "POST", "/files/write", { machine: "mac", path: join(home.dir, "x"), content })).status, 403);
+  assert.equal((await call(home.url, "POST", "/files/read", { machine: "mac", path: join(mac.dir, "nope") })).status, 404);
+  // Locally, any path is fine: the caller already runs on this machine.
+  assert.equal((await call(home.url, "POST", "/files/write", { path: join(mac.dir, "local.txt"), content })).status, 200);
 });

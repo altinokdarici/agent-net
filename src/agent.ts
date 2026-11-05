@@ -1,13 +1,18 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+
 export type Call = (method: string, path: string, body?: unknown) => Promise<{ status: number; body: unknown }>;
 
 export type AgentArgs = {
-  action: "machines" | "list" | "spawn" | "send" | "status" | "stop";
+  action: "machines" | "list" | "spawn" | "send" | "status" | "stop" | "upload" | "download";
   machine?: string;
   cwd?: string;
   prompt?: string;
   name?: string;
   id?: string;
   text?: string;
+  path?: string;
+  to?: string;
 };
 
 export const description = [
@@ -18,18 +23,23 @@ export const description = [
   "send: send text to the agent with this id. Replies arrive later as a new message, so do not wait or poll for them.",
   "status: show whether an agent is running or sleeping.",
   "stop: end an agent for good.",
+  "upload: copy the local file path to path to on machine.",
+  "download: copy the file path on machine to the local path to.",
+  "Other machines only accept files inside their allowed folders.",
 ].join("\n");
 
 export const parameters = {
   type: "object",
   properties: {
-    action: { type: "string", enum: ["machines", "list", "spawn", "send", "status", "stop"] },
-    machine: { type: "string", description: "spawn: machine name from machines." },
+    action: { type: "string", enum: ["machines", "list", "spawn", "send", "status", "stop", "upload", "download"] },
+    machine: { type: "string", description: "spawn, upload, download: machine name from machines." },
     cwd: { type: "string", description: "spawn: folder the agent works in, on its machine." },
     prompt: { type: "string", description: "spawn: the task." },
     name: { type: "string", description: "spawn: optional short label." },
     id: { type: "string", description: "send, status, stop: the agent's session id." },
     text: { type: "string", description: "send: the message." },
+    path: { type: "string", description: "upload: local file. download: file on machine." },
+    to: { type: "string", description: "upload: destination on machine. download: local destination." },
   },
   required: ["action"],
 };
@@ -72,6 +82,21 @@ export async function runAgent(args: AgentArgs, self: string, call: Call): Promi
     case "stop":
       reply = await call("DELETE", `/sessions/${encodeURIComponent(need(args.id, "id"))}`);
       break;
+    case "upload": {
+      const content = (await readFile(resolve(need(args.path, "path")))).toString("base64");
+      reply = await call("POST", "/files/write", { machine: need(args.machine, "machine"), path: need(args.to, "to"), content });
+      break;
+    }
+    case "download": {
+      reply = await call("POST", "/files/read", { machine: need(args.machine, "machine"), path: need(args.path, "path") });
+      if (reply.status >= 400) break;
+      const file = reply.body as { content: string; machine: string; path: string; size: number };
+      const to = resolve(need(args.to, "to"));
+      await mkdir(dirname(to), { recursive: true });
+      await writeFile(to, Buffer.from(file.content, "base64"));
+      reply = { status: 200, body: { from: `${file.machine}:${file.path}`, to, size: file.size } };
+      break;
+    }
     default:
       throw new Error(`Unknown action ${(args as { action: string }).action}.`);
   }
