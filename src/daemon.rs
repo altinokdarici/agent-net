@@ -256,6 +256,7 @@ pub async fn run(dir: PathBuf) -> anyhow::Result<()> {
     tunnel.start().await?;
     let daemon = Arc::new(Daemon { sessions, tunnel: Some(tunnel.clone()), machine, config: config.clone() });
     std::fs::write(state_path(&dir), json!({ "pid": std::process::id(), "port": config.port, "version": crate::VERSION }).to_string())?;
+    crate::log(&format!("agent-net {} started on port {}", crate::VERSION, config.port));
 
     let ticker = daemon.clone();
     tokio::spawn(async move {
@@ -271,12 +272,12 @@ pub async fn run(dir: PathBuf) -> anyhow::Result<()> {
             loop {
                 match crate::update::update(false).await {
                     Ok(Some(version)) => {
-                        eprintln!("Updated to {version}. Restarting.");
+                        crate::log(&format!("Updated to {version}. Restarting."));
                         let _ = updated_tx.send(()).await;
                         return;
                     }
                     Ok(None) => {}
-                    Err(e) => eprintln!("Update check failed: {e:#}"),
+                    Err(e) => crate::log(&format!("Update check failed: {e:#}")),
                 }
                 tokio::time::sleep(Duration::from_secs(60 * 60)).await;
             }

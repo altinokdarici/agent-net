@@ -54,7 +54,7 @@ Download the binary for your platform from the [latest release](https://github.c
 
 ## Updates
 
-Every push to `main` publishes a release. The daemon checks for a newer one at start and every hour, replaces its own binary, refreshes the Copilot extension and restarts. Running agents are not interrupted. Set `"autoUpdate": false` to turn this off. Local development builds never update themselves.
+Every push to `main` publishes a release. The daemon checks for a newer one at start and every hour, replaces its own binary, refreshes the Copilot extension and restarts. Running agents are not interrupted. Set `"autoUpdate": false` to turn this off. Local development builds never update themselves. Update results and daemon errors go to `~/.agent-net/daemon.log`.
 
 ## Configuration
 

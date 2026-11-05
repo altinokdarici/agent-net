@@ -178,7 +178,7 @@ impl MachineTunnel {
                 match me.spawn_host(&id) {
                     Ok(next) => child = next,
                     Err(e) => {
-                        eprintln!("{e:#}");
+                        crate::log(&format!("{e:#}"));
                         tokio::time::sleep(Duration::from_secs(30)).await;
                         if let Ok(next) = me.spawn_host(&id) {
                             child = next;
