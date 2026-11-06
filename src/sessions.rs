@@ -60,6 +60,36 @@ pub fn format_message(text: &str, from: Option<&str>) -> String {
     }
 }
 
+/// Reads a Copilot events.jsonl: whether a turn is in progress, and the last `limit` messages.
+pub fn transcript(events: &str, limit: usize) -> (bool, Vec<serde_json::Value>) {
+    // Sessions always start with a prompt, so one with no events yet is about to work.
+    let mut busy = true;
+    let mut messages = Vec::new();
+    for e in events.lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()) {
+        let role = match e["type"].as_str() {
+            Some("user.message") => "user",
+            Some("assistant.message") => "assistant",
+            Some("assistant.turn_start") => {
+                busy = true;
+                continue;
+            }
+            Some("assistant.turn_end") | Some("session.shutdown") => {
+                busy = false;
+                continue;
+            }
+            _ => continue,
+        };
+        if role == "user" {
+            busy = true;
+        }
+        if let Some(content) = e["data"]["content"].as_str().filter(|c| !c.trim().is_empty()) {
+            messages.push(serde_json::json!({ "role": role, "content": content, "createdAt": e["timestamp"] }));
+        }
+    }
+    let skip = messages.len().saturating_sub(limit);
+    (busy, messages.split_off(skip))
+}
+
 pub fn iso_now() -> String {
     let ms = crate::tunnel::now_ms();
     let secs = (ms / 1000) as i64;
@@ -206,11 +236,16 @@ impl Sessions {
         Ok("queued")
     }
 
-    pub async fn read(&self, id: &str) -> Result<serde_json::Value, HttpError> {
-        match self.get(id) {
-            Some(r) => Ok(self.info(r).await),
-            None => Err(HttpError::new(404, format!("No session {id}."))),
-        }
+    pub async fn read(&self, id: &str, messages: usize) -> Result<serde_json::Value, HttpError> {
+        let Some(r) = self.get(id) else {
+            return Err(HttpError::new(404, format!("No session {id}.")));
+        };
+        let mut v = self.info(r).await;
+        let events = std::fs::read_to_string(crate::trust::copilot_home().join("session-state").join(id).join("events.jsonl")).unwrap_or_default();
+        let (busy, list) = transcript(&events, messages);
+        v["busy"] = (busy && v["state"] == "running").into();
+        v["messages"] = list.into();
+        Ok(v)
     }
 
     /// Ends a session for good: stops its process and forgets it.
@@ -285,6 +320,25 @@ mod tests {
     fn formats_messages() {
         assert_eq!(format_message("hi", None), "hi");
         assert!(format_message("hi", Some("abc")).contains("id \"abc\""));
+    }
+
+    #[test]
+    fn reads_transcript() {
+        let events = [
+            r#"{"type":"user.message","timestamp":"t1","data":{"content":"hi"}}"#,
+            r#"{"type":"assistant.turn_start","data":{}}"#,
+            r#"{"type":"assistant.message","timestamp":"t2","data":{"content":""}}"#,
+            r#"{"type":"assistant.message","timestamp":"t3","data":{"content":"hello"}}"#,
+            r#"{"type":"assistant.turn_end","data":{}}"#,
+        ]
+        .join("\n");
+        let (busy, m) = transcript(&events, 10);
+        assert!(!busy);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[1]["content"], "hello");
+        assert_eq!(transcript(&events, 1).1[0]["role"], "assistant");
+        assert!(transcript("", 10).0);
+        assert!(transcript(&events.lines().take(2).collect::<Vec<_>>().join("\n"), 10).0);
     }
 
     #[test]

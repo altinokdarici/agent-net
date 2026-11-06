@@ -62,11 +62,13 @@ impl Daemon {
                     if remote {
                         return Err(HttpError::new(404, format!("No session {id}.")));
                     }
-                    return self.forward(&id, method.as_str(), uri.path(), &body).await;
+                    let path = uri.path_and_query().map_or(uri.path(), |p| p.as_str());
+                    return self.forward(&id, method.as_str(), path, &body).await;
                 }
                 match (method.as_str(), &parts[2..]) {
                     ("GET", []) => {
-                        let mut v = self.sessions.read(&id).await?;
+                        let n = uri.query().unwrap_or("").split('&').find_map(|q| q.strip_prefix("messages=")?.parse().ok()).unwrap_or(10);
+                        let mut v = self.sessions.read(&id, n).await?;
                         v["machine"] = self.machine.clone().into();
                         Ok((200, v))
                     }
