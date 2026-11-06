@@ -112,7 +112,7 @@ pub fn autostart(exe: &Path, path_env: &str, home: &Path, os: &str, uid: u32) ->
             let run = format!("conhost.exe --headless \"{exe}\" daemon");
             Ok(Autostart {
                 files: vec![],
-                install: vec![step(&["schtasks", "/create", "/f", "/tn", "agent-net", "/sc", "onlogon", "/rl", "limited", "/tr", &run], false), step(&["schtasks", "/run", "/tn", "agent-net"], false)],
+                install: vec![step(&["schtasks", "/create", "/f", "/tn", "agent-net", "/sc", "onlogon", "/rl", "limited", "/tr", &run], false), step(&[&*exe, "stop"], true), step(&["schtasks", "/run", "/tn", "agent-net"], false)],
                 uninstall: vec![step(&["schtasks", "/end", "/tn", "agent-net"], true), step(&["schtasks", "/delete", "/f", "/tn", "agent-net"], true)],
             })
         }
