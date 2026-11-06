@@ -129,7 +129,7 @@ pub fn restart_daemon() -> Result<()> {
     }
     #[cfg(windows)]
     {
-        let log = crate::config::data_dir().join("daemon.log");
+        let log = crate::config::data_dir().join("daemon.out");
         crate::process::spawn_detached(&exe, &["daemon".into()], None, Some(&log))?;
         Ok(())
     }

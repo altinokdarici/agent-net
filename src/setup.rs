@@ -103,11 +103,12 @@ fn ensure_login(devtunnel: &Path) -> Result<()> {
 async fn wait_for_daemon() -> Option<String> {
     let port = crate::config::load_config(&crate::config::data_dir()).ok()?.port;
     let client = reqwest::Client::new();
+    let url = |path: &str| format!("http://127.0.0.1:{port}{path}");
     for _ in 0..60 {
-        if let Ok(r) = client.get(format!("http://127.0.0.1:{port}/machines")).timeout(Duration::from_secs(5)).send().await {
-            if r.status().is_success() {
-                return r.text().await.ok();
-            }
+        if client.get(url("/version")).timeout(Duration::from_secs(2)).send().await.is_ok_and(|r| r.status().is_success()) {
+            // Listing machines asks every peer, so it can take a few seconds.
+            let r = client.get(url("/machines")).timeout(Duration::from_secs(60)).send().await.ok()?;
+            return r.text().await.ok();
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }

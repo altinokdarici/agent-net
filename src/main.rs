@@ -86,7 +86,7 @@ async fn start() -> Result<()> {
     }
     let dir = data_dir();
     std::fs::create_dir_all(&dir)?;
-    let log = dir.join("daemon.log");
+    let log = dir.join("daemon.out");
     process::spawn_detached(&agent_net::current_exe()?, &["daemon".into()], None, Some(&log))?;
     for _ in 0..300 {
         tokio::time::sleep(Duration::from_millis(100)).await;

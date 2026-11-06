@@ -192,7 +192,7 @@ pub fn install() -> Result<()> {
     run_steps(&login.install)?;
     println!("Installed {} and the Copilot extension at {}.", exe.display(), ext.display());
     println!("The daemon starts at login and is starting now.");
-    if let Some(dir) = exe.parent() {
+    if let Some(dir) = exe.parent().filter(|d| crate::setup::which("agent-net").and_then(|f| f.parent().map(|p| p == *d)) != Some(true)) {
         println!("Add {} to PATH to run agent-net from anywhere.", dir.display());
     }
     Ok(())
