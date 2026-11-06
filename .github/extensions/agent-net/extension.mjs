@@ -126,9 +126,15 @@ async function runAgent(args, self) {
 }
 
 let self = process.env.AGENT_NET_SESSION ?? "";
-const session = await joinSession({
-  tools: [{ name: "agent", description, parameters, skipPermission: true, handler: args => runAgent(args, self) }],
-});
+// Under some hosts (e.g. the Agents app's SDK server) joinSession never returns, and session
+// creation waits on this extension. Give up quickly so the session still starts, just without the tool.
+const session = await Promise.race([
+  joinSession({
+    tools: [{ name: "agent", description, parameters, skipPermission: true, handler: args => runAgent(args, self) }],
+  }),
+  new Promise(done => setTimeout(done, 5000).unref()),
+]);
+if (!session) process.exit(0);
 self = session.sessionId;
 
 const server = http.createServer((request, response) => {

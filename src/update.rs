@@ -111,6 +111,10 @@ pub async fn update(force: bool) -> Result<Option<String>> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&temp, std::fs::Permissions::from_mode(0o755))?;
     }
+    // A rename works even when the running file was already replaced; self_replace needs it to exist.
+    #[cfg(unix)]
+    let result = std::fs::rename(&temp, &exe);
+    #[cfg(not(unix))]
     let result = self_replace::self_replace(&temp);
     let _ = std::fs::remove_file(&temp);
     result.context("Could not replace the agent-net executable")?;
