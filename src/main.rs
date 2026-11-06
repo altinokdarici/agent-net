@@ -13,6 +13,7 @@ const USAGE: &str = "Usage: agent-net <command>
   run              Run the daemon in this terminal.
   ls               List agents on every machine.
   attach <id>      Watch and type into a local agent. Ctrl+] detaches.
+  setup            Install prerequisites, sign in to Dev Tunnels and install agent-net.
   install          Install agent-net, add the extension to Copilot and start the daemon at login.
   uninstall        Undo install.
   update           Install the latest release now.
@@ -39,6 +40,7 @@ async fn run(args: Vec<String>) -> Result<()> {
         }
         Some("ls") => ls().await,
         Some("attach") => attach(args.get(1)).await,
+        Some("setup") => agent_net::setup::setup().await,
         Some("install") => install::install(),
         Some("uninstall") => install::uninstall(),
         Some("update") => match update::update(true).await? {

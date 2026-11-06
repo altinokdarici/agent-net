@@ -60,8 +60,16 @@ pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
+/// devtunnel from AGENT_NET_DEVTUNNEL, PATH, or the copy setup downloads.
+pub fn devtunnel_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("AGENT_NET_DEVTUNNEL") {
+        return path.into();
+    }
+    crate::setup::which("devtunnel").or_else(|| Some(crate::setup::bundled_devtunnel()).filter(|p| p.is_file())).unwrap_or_else(|| "devtunnel".into())
+}
+
 fn devtunnel() -> Command {
-    let mut command = Command::new(std::env::var("AGENT_NET_DEVTUNNEL").unwrap_or_else(|_| "devtunnel".into()));
+    let mut command = Command::new(devtunnel_path());
     #[cfg(windows)]
     command.creation_flags(0x0800_0000);
     command.kill_on_drop(true);

@@ -28,19 +28,40 @@ Idle sessions are stopped after a while and resumed with the same session ID whe
 
 ## Requirements
 
-- GitHub Copilot CLI (`copilot`).
-- Dev Tunnels CLI (`devtunnel`), signed in with `devtunnel user login -g -d`. Use the same account on every machine; machines only see tunnels owned by that account.
-- While this repository is private, updates need GitHub access: `gh auth login` with an account that can read it, or `GITHUB_TOKEN`.
+- GitHub Copilot CLI (`copilot`), signed in.
+- Dev Tunnels CLI (`devtunnel`), signed in with GitHub. Use the same GitHub account on every machine; machines only see tunnels owned by that account.
+
+No Node or npm install is needed. `agent-net setup` installs what is missing.
 
 ## Setup
 
-Download the binary for your platform from the [latest release](https://github.com/altinokdarici/agent-net/releases/latest), then run:
+Windows (PowerShell):
 
-```sh
-./agent-net-<platform> install
+```powershell
+irm https://raw.githubusercontent.com/altinokdarici/agent-net/main/install.ps1 | iex
 ```
 
-`install` copies the binary to `~/.agent-net/bin/agent-net`, adds the extension to Copilot and starts the daemon at login.
+macOS and Linux:
+
+```sh
+case "$(uname -s)-$(uname -m)" in Darwin-arm64) t=aarch64-apple-darwin;; Darwin-x86_64) t=x86_64-apple-darwin;; Linux-aarch64|Linux-arm64) t=aarch64-unknown-linux-musl;; *) t=x86_64-unknown-linux-musl;; esac; curl -fsSL -o /tmp/agent-net "https://github.com/altinokdarici/agent-net/releases/latest/download/agent-net-$t" && chmod +x /tmp/agent-net && /tmp/agent-net setup
+```
+
+`setup` can be run again at any time. It:
+
+1. Installs Copilot CLI if it is missing (winget, Homebrew or npm).
+2. Downloads `devtunnel` to `~/.agent-net/bin` if it is not on PATH.
+3. Signs in to Dev Tunnels with GitHub if needed (a browser, or a device code on a headless Linux machine).
+4. Runs `install`: copies the binary to `~/.agent-net/bin/agent-net`, adds the extension to Copilot and starts the daemon at login.
+5. Waits for the daemon and prints the machines it can see.
+
+### Install with an agent
+
+Paste this into Copilot CLI (or any coding agent) on the new machine:
+
+```text
+Install agent-net on this machine. Run the official installer from https://github.com/altinokdarici/agent-net#setup: on Windows, `irm https://raw.githubusercontent.com/altinokdarici/agent-net/main/install.ps1 | iex` in PowerShell; on macOS or Linux, the one-line curl command from that README section. Run it in a terminal I can see, because it may ask me to sign in to Dev Tunnels with GitHub; when it shows a sign-in link or device code, show it to me and wait. Use the same GitHub account as my other agent-net machines. When it finishes, run `agent-net version` (from ~/.agent-net/bin if it is not on PATH) and report the version and the machine list setup printed. If anything fails, show the last lines of ~/.agent-net/daemon.log and ~/.agent-net/tunnel.log.
+```
 
 | Command | Does |
 |---|---|
@@ -48,6 +69,7 @@ Download the binary for your platform from the [latest release](https://github.c
 | `agent-net run` | Runs the daemon in this terminal. |
 | `agent-net ls` | Lists agents on every machine. |
 | `agent-net attach <id>` | Watches and types into an agent on this machine. Ctrl+] detaches. |
+| `agent-net setup` | Installs prerequisites, signs in to Dev Tunnels and runs `install`. |
 | `agent-net install` / `uninstall` | Adds or removes the binary, the Copilot extension and the login item: a systemd user service on Linux, a LaunchAgent on macOS, a logon task on Windows. |
 | `agent-net update` | Installs the latest release now. |
 | `agent-net version` | Prints the version. |

@@ -5,6 +5,7 @@ pub mod host;
 pub mod install;
 pub mod process;
 pub mod sessions;
+pub mod setup;
 pub mod trust;
 pub mod tunnel;
 pub mod update;
