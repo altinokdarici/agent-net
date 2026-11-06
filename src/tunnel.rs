@@ -137,7 +137,7 @@ impl MachineTunnel {
         let existing = list(NETWORK_LABEL).await?.into_iter().find(|t| t.labels.contains(&label));
         let tunnel = match existing {
             Some(t) => t,
-            None => tunnel_info(&run(&["create", "--labels", NETWORK_LABEL, &label, "--description", &self.name]).await?["tunnel"]),
+            None => tunnel_info(&run(&["create", "--labels", NETWORK_LABEL, "--labels", &label, "--description", &self.name]).await?["tunnel"]),
         };
         let details = show(&tunnel.tunnel_id).await?;
         if !details.ports.iter().any(|(p, _)| *p == self.port) {

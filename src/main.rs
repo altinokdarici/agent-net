@@ -22,7 +22,7 @@ const USAGE: &str = "Usage: agent-net <command>
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = run(args).await {
-        eprintln!("{e:#}");
+        agent_net::log(&format!("error: {e:#}"));
         std::process::exit(1);
     }
 }
